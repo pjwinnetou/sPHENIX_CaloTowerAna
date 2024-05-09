@@ -64,7 +64,7 @@ R__LOAD_LIBRARY(libFROG.so)
 
 #endif
 
-void Fun4All_macro(const char* infile="DST_CALO_run1auau_ana402_2023p009-00023727-0006.root", bool isMC=false, bool isHI=false)
+void Fun4All_macro(const char* infile="DST_CALOR-00040796-0038.root", bool isMC=false, bool isHI=false)
 {
     string outdir = "outputfiles";
     void * dirf = gSystem->OpenDirectory(outdir.c_str());
@@ -82,17 +82,18 @@ void Fun4All_macro(const char* infile="DST_CALO_run1auau_ana402_2023p009-0002372
     //===============
 
     // global tag
-    rc->set_StringFlag("CDB_GLOBALTAG","ProdA_2023"); 
-    rc->set_uint64Flag("TIMESTAMP",23727);
+    rc->set_StringFlag("CDB_GLOBALTAG","ProdA_2024"); 
+    rc->set_uint64Flag("TIMESTAMP",40796);
+      
+    Global_Reco();
 
     if(isMC && isHI){
-      Global_Reco();
       PHG4CentralityReco *cent = new PHG4CentralityReco();
       cent->Verbosity(verbosity);
       cent->GetCalibrationParameters().ReadFromFile("centrality", "xml", 0, 0, string(getenv("CALIBRATIONROOT")) + string("/Centrality/"));
       se->registerSubsystem( cent );
     }
-
+/*
     RetowerCEMC *rcemc = new RetowerCEMC();
     rcemc->Verbosity(verbosity);
     rcemc->set_towerinfo(true);
@@ -150,10 +151,13 @@ void Fun4All_macro(const char* infile="DST_CALO_run1auau_ana402_2023p009-0002372
     ClusterIso *cliso4 = new ClusterIso("ClusterIso4",0.3,4,true,true);
     cliso4->Verbosity(verbosity);
     se->registerSubsystem( cliso4 );
-
+*/
     std::cout << "infile : " << infile <<std::endl;
+    //const char* infilepath = Form("/sphenix/user/jpark4/sPHENIX_software/Simulation/PhotonJet/%s",infile); 
+    const char* infilepath = Form("/sphenix/tg/tg01/commissioning/CaloCalibWG/bseidlitz/tempDEST_noSZS/%s",infile); 
+
     Fun4AllInputManager *intrue = new Fun4AllDstInputManager("DST_TOWERS");
-    intrue->AddFile(infile);
+    intrue->AddFile(infilepath);
     se->registerInputManager(intrue);
 
     CaloAna *ca = new CaloAna("caloana",outfile,isMC,isHI);
