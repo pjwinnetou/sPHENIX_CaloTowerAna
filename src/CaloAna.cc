@@ -1,14 +1,13 @@
 #include <iostream>
 #include "CaloAna.h"
-
 using namespace std;
 
   bool emcal    = 1;
-  bool clusters = 1;
-  bool ihcal    = 1;
-  bool ohcal    = 1;
+  bool clusters = 0;
+  bool ihcal    = 0;
+  bool ohcal    = 0;
   bool zdc      = 0;
-  bool mbd      = 1;
+  bool mbd      = 0;
   bool sepd     = 0;
 
   CaloAna::CaloAna(const std::string& name, const char* outname, bool _isMC, bool _isHI)
@@ -31,16 +30,11 @@ CaloAna::~CaloAna()
     delete clusterntuple;
 }
 
-int CaloAna::Init(PHCompositeNode* topNode)
+int CaloAna::Init(PHCompositeNode*)
 { 
-  if(!topNode) {
-    std::cerr << "CaloAna::Init - topnode PHCompositeNode not valid! return -1" << std::endl;
-    return -1;
-  }
-
   try {
-    InitTree();
     InitOutputFile();
+    InitTree();
   }  
   catch (const std::exception& e){
     std::cerr << "CaloAna::Init - Exception during init! For " << e.what() << " return -1" << std::endl;
@@ -122,8 +116,9 @@ void CaloAna::InitTree(){
         towerntuple->Branch("mbd_totcharge",&m_mbd_totcharge);
         towerntuple->Branch("mbd_totcharge_south",&m_mbd_totcharge_south);
         towerntuple->Branch("mbd_totcharge_north",&m_mbd_totcharge_north);
-        towerntuple->Branch("nHitNorth",&nHitNorth);
-        towerntuple->Branch("nHitSouth",&nHitSouth);
+        towerntuple->Branch("mbd_charge_ch",&m_mbd_ch);
+        towerntuple->Branch("nMBDHitNorth",&nMBDHitNorth);
+        towerntuple->Branch("nMBDHitSouth",&nMBDHitSouth);
     }
 
     if (sepd) {
@@ -140,16 +135,20 @@ void CaloAna::InitTree(){
       towerntuple->Branch("truth_eta",&truth_eta);
       towerntuple->Branch("truth_phi",&truth_phi);
       towerntuple->Branch("truth_id",&truth_id);
-      towerntuple->Branch("npart",&npart);
-      towerntuple->Branch("ncoll",&ncoll);
-      towerntuple->Branch("bimp",&bimp);
-      towerntuple->Branch("Cent_impactparam",&Cent_impactparam);
-      towerntuple->Branch("Centrality",&Centrality);
+      if(isHI){
+        towerntuple->Branch("npart",&npart);
+        towerntuple->Branch("ncoll",&ncoll);
+        towerntuple->Branch("bimp",&bimp);
+        towerntuple->Branch("Cent_impactparam",&Cent_impactparam);
+        towerntuple->Branch("Centrality",&Centrality);
+      }
       towerntuple->Branch("signalId",&processId);
     }
     else if(!isMC){
-      towerntuple->Branch("isMinBias",&isMinBias);
-      towerntuple->Branch("centbin",&centbin);
+      if(isHI){
+        towerntuple->Branch("isMinBias",&isMinBias);
+        towerntuple->Branch("centbin",&centbin);
+      }
     }
 
 }
@@ -193,7 +192,7 @@ int CaloAna::process_towers(PHCompositeNode* topNode)
   }
 
   if (clusters) {
-    RawClusterContainer *clustersEM = findNode::getClass<RawClusterContainer>(topNode, "CLUSTERINFO_CEMC");
+    RawClusterContainer *clustersEM = (isMC) ? static_cast<RawClusterContainer*>(findNode::getClass<RawClusterContainer>(topNode, "CLUSTER_CEMC")) : static_cast<RawClusterContainer*>(findNode::getClass<RawClusterContainer>(topNode, "CLUSTERINFO_CEMC"));
     RawClusterContainer::ConstIterator hiter;
     RawClusterContainer::ConstRange begin_end = clustersEM->getClusters(); 
 
@@ -204,7 +203,7 @@ int CaloAna::process_towers(PHCompositeNode* topNode)
       CLHEP::Hep3Vector vertex(vx, vy, vz);
       CLHEP::Hep3Vector E_vec_cluster = RawClusterUtility::GetECoreVec(*cluster, vertex);
 
-      float clPt = E_vec_cluster.perp();
+      //float clPt = E_vec_cluster.perp();
       float clEta = E_vec_cluster.pseudoRapidity();
       float clPhi = E_vec_cluster.phi();
       float clE = E_vec_cluster.mag();
@@ -309,13 +308,15 @@ int CaloAna::process_towers(PHCompositeNode* topNode)
     MbdPmtContainer *mbdpmts = findNode::getClass<MbdPmtContainerV1>(mbdNode, "MbdPmtContainer");
     if(!mbdpmts){std::cout << "no MbdPmtContainer" << std::endl; return Fun4AllReturnCodes::ABORTEVENT;}
 
-    nHitNorth=0;
-    nHitSouth=0;
-    for(int ipmt=0;ipmt<128; ++ipmt){ //mbdpmts->get_npmts() function doesn't work
+    nMBDHitNorth=0;
+    nMBDHitSouth=0;
+    m_mbd_ch=0;
+    for(int ipmt=0;ipmt<128; ++ipmt){ //mbdpmts->get_npmts() function not working..
       MbdPmtHit *mbdhit = mbdpmts->get_pmt(ipmt);
       m_mbd_totcharge += mbdhit->get_q();
-      if(ipmt<64 && mbdhit->get_q()>0.4){ nHitNorth++; m_mbd_totcharge_north+=mbdhit->get_q();}
-      if(ipmt>=64 && mbdhit->get_q()>0.4){ nHitSouth++; m_mbd_totcharge_south+=mbdhit->get_q();}
+      if(ipmt==2) m_mbd_ch = mbdhit->get_q();
+      if(ipmt<64 && mbdhit->get_q()>0.4){ nMBDHitNorth++; m_mbd_totcharge_north+=mbdhit->get_q();}
+      if(ipmt>=64 && mbdhit->get_q()>0.4){ nMBDHitSouth++; m_mbd_totcharge_south+=mbdhit->get_q();}
     }
   }
 
@@ -326,34 +327,64 @@ int CaloAna::process_towers(PHCompositeNode* topNode)
 }
 
 int CaloAna::ProcessGlobalEventInfo(PHCompositeNode* topNode){
-  GlobalVertexMap *globalvtxmap = findNode::getClass<GlobalVertexMap>(topNode,"GlobalVertexMap");
+
+  //vertex
   vz=-999;
   vx=-999;
   vy=-999;
 
-  bool isglbvtx=true;
-  if(!globalvtxmap || globalvtxmap->empty()){ 
-    std::cout << "Empty mbdmap " << std::endl;
-    isglbvtx=false;
-    return Fun4AllReturnCodes::ABORTEVENT;
-  }
-  if(isglbvtx){
-    GlobalVertex *bvertex= nullptr;
-    if (globalvtxmap && m_UseAltZVertex == 1)
-    {
-      for (GlobalVertexMap::ConstIter globaliter= globalvtxmap->begin(); globaliter != globalvtxmap->end(); ++globaliter)
+  if(isMC){
+    MbdVertexMap *mbdvtxmap = findNode::getClass<MbdVertexMap>(topNode,"MbdVertexMap");
+    bool isglbvtx=true;
+    if(!mbdvtxmap){std::cout << "no mbdvertex map..."<<std::endl;}
+    if(mbdvtxmap->empty()){ 
+      std::cout << "Empty mbdmap or mbdvtx node" << std::endl;
+      isglbvtx=false;
+    }
+    if(isglbvtx){
+      MbdVertex *bvertex= nullptr;
+      if (mbdvtxmap && m_UseAltZVertex == 1)
       {
-        bvertex = globaliter->second;
+        for (MbdVertexMap::ConstIter mbditer= mbdvtxmap->begin(); mbditer != mbdvtxmap->end(); ++mbditer)
+        {
+          bvertex = mbditer->second;
+        }
+        if(!bvertex){std::cout << "could not find globalvtxmap iter :: set vtx to (-999,-999,-999)" << std::endl;}
+        else if(bvertex){
+          vz = bvertex->get_z();
+          vy = bvertex->get_y();
+          vx = bvertex->get_x();
+        }
       }
-      if(!bvertex){std::cout << "could not find globalvtxmap iter :: set vtx to (-999,-999,-999)" << std::endl;}
-      else if(bvertex){
-        vz = bvertex->get_z();
-        vy = bvertex->get_y();
-        vx = bvertex->get_x();
+    }
+  }
+  else if(!isMC){
+    GlobalVertexMapv1 *globalvtxmap = findNode::getClass<GlobalVertexMapv1>(topNode,"GlobalVertexMap");
+    bool isglbvtx=true;
+    if(!globalvtxmap || globalvtxmap->empty()){ 
+      std::cout << "Empty mbdmap " << std::endl;
+      isglbvtx=false;
+      return Fun4AllReturnCodes::ABORTEVENT;
+    }
+    if(isglbvtx){
+      GlobalVertex *bvertex= nullptr;
+      if (globalvtxmap && m_UseAltZVertex == 1)
+      {
+        for (GlobalVertexMap::ConstIter globaliter= globalvtxmap->begin(); globaliter != globalvtxmap->end(); ++globaliter)
+        {
+          bvertex = globaliter->second;
+        }
+        if(!bvertex){std::cout << "could not find globalvtxmap iter :: set vtx to (-999,-999,-999)" << std::endl;}
+        else if(bvertex){
+          vz = bvertex->get_z();
+          vy = bvertex->get_y();
+          vx = bvertex->get_x();
+        }
       }
     }
   }
     
+  //Event info
   if(isMC){
     PHHepMCGenEventMap *genevtmap = findNode::getClass<PHHepMCGenEventMap>(topNode, "PHHepMCGenEventMap");
     if(!genevtmap){std::cout << "no PHHepMCGenEventMap" << std::endl; return Fun4AllReturnCodes::ABORTEVENT;}
@@ -389,25 +420,27 @@ int CaloAna::ProcessGlobalEventInfo(PHCompositeNode* topNode){
     }
   }
   else if(!isMC){
-    CentralityInfo *centrality = findNode::getClass<CentralityInfo>(topNode, "CentralityInfo");
-    if (!centrality)
-    {
-      std::cout << "no centrality node " << std::endl;
-      return Fun4AllReturnCodes::ABORTRUN;
-    }
-    
-    MinimumBiasInfo *minimumbiasinfo = findNode::getClass<MinimumBiasInfo>(topNode, "MinimumBiasInfo");
-    if (!minimumbiasinfo)
-    {
-      std::cout << "no minimumbias node " << std::endl;
-      return Fun4AllReturnCodes::ABORTRUN;
-    }
+    if(isHI){
+      CentralityInfo *centrality = findNode::getClass<CentralityInfo>(topNode, "CentralityInfo");
+      if (!centrality)
+      {
+        std::cout << "no centrality node " << std::endl;
+        return Fun4AllReturnCodes::ABORTRUN;
+      }
 
-    float centile = (centrality->has_centile(CentralityInfo::PROP::mbd_NS) ? centrality->get_centile(CentralityInfo::PROP::mbd_NS) : -999.99);
-    centbin = centile*100;
-    isMinBias = minimumbiasinfo->isAuAuMinimumBias(); 
+      MinimumBiasInfo *minimumbiasinfo = findNode::getClass<MinimumBiasInfo>(topNode, "MinimumBiasInfo");
+      if (!minimumbiasinfo)
+      {
+        std::cout << "no minimumbias node " << std::endl;
+        return Fun4AllReturnCodes::ABORTRUN;
+      }
+
+      float centile = (centrality->has_centile(CentralityInfo::PROP::mbd_NS) ? centrality->get_centile(CentralityInfo::PROP::mbd_NS) : -999.99);
+      centbin = centile*100;
+      isMinBias = minimumbiasinfo->isAuAuMinimumBias(); 
+    }
   }
-
+  return Fun4AllReturnCodes::EVENT_OK;
 }
 
 void CaloAna::ProcessFillTruthParticle(PHCompositeNode* topNode){
@@ -495,25 +528,25 @@ void CaloAna::ProcessClearBranchVar(){
     m_emcal_etacorr.clear();
     m_emcal_chi2.clear();
     m_emcal_pedestal.clear();
-
-    if(clusters){
-      m_emcal_cluster_E.clear();
-      m_emcal_cluster_Ecore.clear();
-      m_emcal_cluster_eta.clear();
-      m_emcal_cluster_phi.clear();
-      m_emcal_cluster_ntower.clear();
-      m_emcal_cluster_chi2.clear();
-      m_emcal_cluster_prob.clear();
-      m_emcal_cluster_iso_unsubR01.clear();
-      m_emcal_cluster_iso_unsubR02.clear();
-      m_emcal_cluster_iso_unsubR03.clear();
-      m_emcal_cluster_iso_unsubR04.clear();
-      m_emcal_cluster_iso_subR01.clear();
-      m_emcal_cluster_iso_subR02.clear();
-      m_emcal_cluster_iso_subR03.clear();
-      m_emcal_cluster_iso_subR04.clear();
-    }
   }
+  if(clusters){
+    m_emcal_cluster_E.clear();
+    m_emcal_cluster_Ecore.clear();
+    m_emcal_cluster_eta.clear();
+    m_emcal_cluster_phi.clear();
+    m_emcal_cluster_ntower.clear();
+    m_emcal_cluster_chi2.clear();
+    m_emcal_cluster_prob.clear();
+    m_emcal_cluster_iso_unsubR01.clear();
+    m_emcal_cluster_iso_unsubR02.clear();
+    m_emcal_cluster_iso_unsubR03.clear();
+    m_emcal_cluster_iso_unsubR04.clear();
+    m_emcal_cluster_iso_subR01.clear();
+    m_emcal_cluster_iso_subR02.clear();
+    m_emcal_cluster_iso_subR03.clear();
+    m_emcal_cluster_iso_subR04.clear();
+  }
+  
   if (ihcal) {
     m_hcalin_etabin.clear();
     m_hcalin_phibin.clear();
@@ -543,6 +576,7 @@ void CaloAna::ProcessClearBranchVar(){
   }
   if (mbd) {
     m_mbd_energy.clear();
+    m_mbd_ch=0; 
     m_mbd_totcharge=0;
     m_mbd_totcharge_south=0;
     m_mbd_totcharge_north=0;

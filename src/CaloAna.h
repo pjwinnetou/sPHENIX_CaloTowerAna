@@ -35,6 +35,7 @@
 
 // Global vertex
 #include <globalvertex/GlobalVertexMap.h>
+#include <globalvertex/GlobalVertexMapv1.h>
 #include <globalvertex/MbdVertex.h>
 #include <globalvertex/MbdVertexMapv1.h>
 #include <globalvertex/GlobalVertex.h>
@@ -220,6 +221,7 @@ class CaloAna : public SubsysReco
   float m_mbd_totcharge;
   float m_mbd_totcharge_south;
   float m_mbd_totcharge_north;
+  float m_mbd_ch;
   bool minbias=false;
 
   std::vector<float> m_sepd_energy;
@@ -268,8 +270,8 @@ class CaloAna : public SubsysReco
   float sum_s2 = 0.;
   int hits_s_t=0;
   int hits_n_t=0;
-  int nHitNorth=0;
-  int nHitSouth=0;
+  int nMBDHitNorth=0;
+  int nMBDHitSouth=0;
 
   int nEvent[3]= {0,0,0};
   int nEventPass[3]= {0,0,0};
